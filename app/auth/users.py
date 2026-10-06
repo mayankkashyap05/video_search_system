@@ -1,26 +1,36 @@
 """
 User authentication: password hashing + JWT session tokens.
-Replaces the single shared X-API-Key model with real per-user accounts.
+JWT_SECRET is optional: if not set in .env, a random one is generated once
+and saved to data/.jwt_secret (so sessions survive restarts).
 """
 import os
+import secrets
 from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 load_dotenv()
+
 from passlib.context import CryptContext
 import jwt
 from fastapi import Header, HTTPException, Depends
 from sqlalchemy.orm import Session
+
+from app.config import DATA_DIR
 from app.db.database import get_db
 from app.db.models import User
 
-JWT_SECRET = os.environ.get("JWT_SECRET")
-if not JWT_SECRET:
-    raise RuntimeError(
-        "JWT_SECRET not set. Add a long random value to your .env, e.g.:\n"
-        "  python -c \"import secrets; print(secrets.token_urlsafe(48))\""
-    )
+
+def _load_or_create_secret() -> str:
+    secret_file = DATA_DIR / ".jwt_secret"
+    if secret_file.exists():
+        return secret_file.read_text().strip()
+    secret = secrets.token_urlsafe(48)
+    secret_file.write_text(secret)
+    return secret
+
+
+JWT_SECRET = os.environ.get("JWT_SECRET") or _load_or_create_secret()
 JWT_ALGORITHM = "HS256"
-JWT_EXPIRE_HOURS = 24 * 7  # sessions last a week
+JWT_EXPIRE_HOURS = 24 * 7
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -43,7 +53,6 @@ def create_access_token(user_id: str) -> str:
 
 
 def decode_access_token(token: str) -> str:
-    """Returns the user_id encoded in the token, or raises HTTPException."""
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         return payload["sub"]
@@ -57,10 +66,6 @@ def get_current_user(
     authorization: str | None = Header(default=None, alias="Authorization"),
     db: Session = Depends(get_db),
 ) -> User:
-    """
-    FastAPI dependency: expects header 'Authorization: Bearer <token>'.
-    Returns the authenticated User row, or raises 401.
-    """
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing or malformed Authorization header")
     token = authorization.removeprefix("Bearer ").strip()

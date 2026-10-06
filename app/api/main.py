@@ -1,24 +1,31 @@
 """
 FastAPI application: upload videos, trigger processing, check status,
-retrieve results, and search.
+retrieve results, and search. Also serves the frontend at "/".
+
+Run with a single process (embedded Qdrant locks its data folder):
+    uvicorn app.api.main:app --host 127.0.0.1 --port 8000
 """
 import uuid
 from pathlib import Path
+from dotenv import load_dotenv
+load_dotenv()
+
 from fastapi import FastAPI, UploadFile, File, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
+
+from app.config import TEMP_DIR, BASE_DIR
 from app.core.video_chat import ask_about_video
 from app.db.database import get_db, engine, Base
 from app.db.models import Video, ProcessingJob, JobStatus, User
 from app.storage.s3_storage import upload_file
-from app.workers.tasks import process_video_task
+from app.workers.tasks import process_video_task, process_video_from_url_task
 from app.core.qdrant_indexing import search as qdrant_search
-from app.workers.tasks import process_video_from_url_task
 from app.auth.users import hash_password, verify_password, create_access_token, get_current_user
 from app.core.live_sessions import start_session, get_session, stop_session, list_sessions
-from dotenv import load_dotenv
-load_dotenv()
+
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Video Search API", version="1.0")
@@ -31,7 +38,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-TEMP_UPLOAD_DIR = Path("/tmp/video_uploads")
+TEMP_UPLOAD_DIR = TEMP_DIR / "uploads"
 TEMP_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -84,15 +91,18 @@ async def upload_video(
     current_user: User = Depends(get_current_user),
 ):
     video_id = str(uuid.uuid4())
-    local_path = TEMP_UPLOAD_DIR / f"{video_id}_{file.filename}"
+    # Strip any directory parts from the client-supplied filename
+    # (blocks "../" tricks and Windows path characters in storage keys).
+    safe_name = Path(file.filename or "upload").name or "upload"
+    local_path = TEMP_UPLOAD_DIR / f"{video_id}_{safe_name}"
 
     with open(local_path, "wb") as f:
         f.write(await file.read())
 
-    storage_key = f"videos/{video_id}/{file.filename}"
+    storage_key = f"videos/{video_id}/{safe_name}"
     upload_file(local_path, storage_key)
 
-    video = Video(id=video_id, owner_id=current_user.id, filename=file.filename, storage_key=storage_key)
+    video = Video(id=video_id, owner_id=current_user.id, filename=safe_name, storage_key=storage_key)
     db.add(video)
     db.commit()
 
@@ -100,7 +110,7 @@ async def upload_video(
     db.add(job)
     db.commit()
 
-    process_video_task.delay(job.id, video_id, storage_key, file.filename)
+    process_video_task.delay(job.id, video_id, storage_key, safe_name)
 
     local_path.unlink(missing_ok=True)
 
@@ -272,8 +282,7 @@ def search_live_session(
     _get_owned_session_or_404(session_id, current_user)
     # Live chunks are indexed into Qdrant under video_id=session_id (see
     # StreamingTranscriber.add_chunk -> index_video), so we can reuse the
-    # same qdrant_search() the regular /search endpoint uses -- no need for
-    # a separate search method on StreamingTranscriber.
+    # same qdrant_search() the regular /search endpoint uses.
     results = qdrant_search(q, n_results=limit, video_id=session_id, owner_id=current_user.id)
     return {"session_id": session_id, "query": q, "results": results}
 
@@ -284,3 +293,8 @@ def stop_live_session(session_id: str, current_user: User = Depends(get_current_
     if not stopped:
         raise HTTPException(status_code=404, detail="Live session not found")
     return {"session_id": session_id, "status": "stopped"}
+
+
+# MUST stay last: a "/" mount catches everything, so it has to be registered
+# after all API routes. Serves frontend/index.html at http://127.0.0.1:8000/
+app.mount("/", StaticFiles(directory=BASE_DIR / "frontend", html=True), name="frontend")

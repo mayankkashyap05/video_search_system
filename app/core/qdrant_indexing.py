@@ -2,6 +2,12 @@
 Pipeline stage: Vector indexing and semantic search using Qdrant.
 (Replaces an earlier Chroma-based prototype, since removed.)
 
+Runs in EMBEDDED (local) mode by default: Qdrant stores its data in
+data/qdrant/ inside this process -- no server or Docker needed. Set
+QDRANT_URL in .env only if you want to use a separate Qdrant server instead.
+NOTE: embedded mode locks its folder, so run a single process (no
+`uvicorn --reload`, no multiple workers).
+
 Two-stage retrieval: query_points() does fast approximate nearest-neighbor
 search over embeddings to get a candidate pool, then a cross-encoder
 re-ranks just those candidates for higher precision. This is standard
@@ -10,11 +16,15 @@ are accurate but too slow to run over the full collection.
 """
 import os
 import uuid
+import threading
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue
 from sentence_transformers import SentenceTransformer, CrossEncoder
+from app.config import QDRANT_PATH
 
-QDRANT_URL = os.environ.get("QDRANT_URL", "http://localhost:6333")
+# Empty/unset = embedded mode (default). Set to e.g. http://localhost:6333
+# to talk to a real Qdrant server.
+QDRANT_URL = os.environ.get("QDRANT_URL") or None
 
 # All videos and all users share ONE Qdrant collection. Isolation between
 # users/videos is enforced entirely via payload filters (video_id, owner_id)
@@ -38,14 +48,25 @@ _client = None
 _embedder = None
 _reranker = None
 
+# API request threads and the background pipeline thread can both hit these
+# lazy loaders at the same time -- the lock prevents double-initialisation
+# (which would try to open the embedded Qdrant folder twice and fail).
+_init_lock = threading.Lock()
+
 
 def _get_client():
     """Lazily create (and cache) the Qdrant client, ensuring the collection
     exists on first use."""
     global _client
     if _client is None:
-        _client = QdrantClient(url=QDRANT_URL)
-        _ensure_collection(_client)
+        with _init_lock:
+            if _client is None:
+                if QDRANT_URL:
+                    client = QdrantClient(url=QDRANT_URL)
+                else:
+                    client = QdrantClient(path=str(QDRANT_PATH))
+                _ensure_collection(client)
+                _client = client
     return _client
 
 
@@ -65,8 +86,10 @@ def _get_embedder():
     """Lazily load (and cache) the sentence embedding model."""
     global _embedder
     if _embedder is None:
-        print(f"Loading embedding model ({EMBEDDING_MODEL})...")
-        _embedder = SentenceTransformer(EMBEDDING_MODEL)
+        with _init_lock:
+            if _embedder is None:
+                print(f"Loading embedding model ({EMBEDDING_MODEL})...")
+                _embedder = SentenceTransformer(EMBEDDING_MODEL)
     return _embedder
 
 
@@ -74,8 +97,10 @@ def _get_reranker():
     """Lazily load (and cache) the cross-encoder reranking model."""
     global _reranker
     if _reranker is None:
-        print(f"Loading re-ranking model ({RERANK_MODEL})...")
-        _reranker = CrossEncoder(RERANK_MODEL)
+        with _init_lock:
+            if _reranker is None:
+                print(f"Loading re-ranking model ({RERANK_MODEL})...")
+                _reranker = CrossEncoder(RERANK_MODEL)
     return _reranker
 
 
@@ -141,7 +166,6 @@ def index_video(transcript, captions, video_id, owner_id):
         )
         for i in range(len(chunks))
     ]
-
     client.upsert(collection_name=COLLECTION_NAME, points=points)
     print(f"Indexed {len(chunks)} chunks for video '{video_id}' into Qdrant.")
 
@@ -167,9 +191,7 @@ def search(query, n_results=5, video_id=None, owner_id=None):
     # This is the ONLY thing preventing one user's search from returning
     # another user's indexed content (all videos share one Qdrant
     # collection -- see COLLECTION_NAME note above). Failing loudly on a
-    # missing owner_id is safer than silently searching across all users,
-    # which is what happened before this check existed whenever a caller
-    # passed owner_id=None or "".
+    # missing owner_id is safer than silently searching across all users.
     if not owner_id:
         raise ValueError("search() requires a non-empty owner_id -- refusing to "
                           "search without a user scope, since this collection is "
@@ -215,7 +237,6 @@ def search(query, n_results=5, video_id=None, owner_id=None):
     reranker = _get_reranker()
     pairs = [[query, c["text"]] for c in candidates]
     rerank_scores = reranker.predict(pairs)
-
     for c, score in zip(candidates, rerank_scores):
         c["rerank_score"] = float(score)
 
