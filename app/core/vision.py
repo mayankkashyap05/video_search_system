@@ -30,11 +30,11 @@ def _load_model():
     global _model, _processor
     if _model is not None:
         return
-    print("Loading BLIP vision model (first run downloads weights, ~1GB)...")
+    print("Loading BLIP vision model (safetensors format)...")
     from transformers import BlipProcessor, BlipForConditionalGeneration
     model_id = "Salesforce/blip-image-captioning-base"
     _processor = BlipProcessor.from_pretrained(model_id)
-    _model = BlipForConditionalGeneration.from_pretrained(model_id)
+    _model = BlipForConditionalGeneration.from_pretrained(model_id, use_safetensors=True)
     print("BLIP loaded.")
 
 
