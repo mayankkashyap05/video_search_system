@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#f4f6f4" />
-  <meta name="description" content="Aperture makes every moment in your video library searchable." />
-  <title>Aperture — Video library</title>
+  <meta name="description" content="ClipSearch makes every moment in your video library searchable." />
+  <title>ClipSearch — Video library</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -1055,14 +1055,14 @@
             <path d="M12 3.75v4.1m0 8.3v4.1M20.25 12h-4.1m-8.3 0h-4.1M17.84 6.16l-2.9 2.9m-5.88 5.88-2.9 2.9m11.68 0-2.9-2.9m-5.88-5.88-2.9-2.9" />
           </svg>
         </span>
-        <span class="brand-name">Aperture</span>
+        <span class="brand-name">ClipSearch</span>
       </div>
     </div>
 
     <!-- Sign in and sign up -->
     <section class="screen" id="signin" aria-labelledby="signinTitle">
       <main class="auth-layout">
-        <section class="auth-intro" aria-label="About Aperture">
+        <section class="auth-intro" aria-label="About ClipSearch">
           <div class="brand-lockup">
             <span class="brand-mark">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -1070,7 +1070,7 @@
                 <path d="M12 3.75v4.1m0 8.3v4.1M20.25 12h-4.1m-8.3 0h-4.1M17.84 6.16l-2.9 2.9m-5.88 5.88-2.9 2.9m11.68 0-2.9-2.9m-5.88-5.88-2.9-2.9" />
               </svg>
             </span>
-            <span class="brand-name">Aperture</span>
+            <span class="brand-name">ClipSearch</span>
           </div>
           <div class="auth-intro-copy">
             <p class="eyebrow">Video knowledge, in focus</p>
@@ -1088,7 +1088,7 @@
                 <path d="M12 3.75v4.1m0 8.3v4.1M20.25 12h-4.1m-8.3 0h-4.1M17.84 6.16l-2.9 2.9m-5.88 5.88-2.9 2.9m11.68 0-2.9-2.9m-5.88-5.88-2.9-2.9" />
               </svg>
             </span>
-            <span class="brand-name">Aperture</span>
+            <span class="brand-name">ClipSearch</span>
           </div>
           <p class="eyebrow">Your searchable library</p>
           <h2 id="signinTitle">Welcome back</h2>
@@ -1140,7 +1140,7 @@
                 <path d="M12 3.75v4.1m0 8.3v4.1M20.25 12h-4.1m-8.3 0h-4.1M17.84 6.16l-2.9 2.9m-5.88 5.88-2.9 2.9m11.68 0-2.9-2.9m-5.88-5.88-2.9-2.9" />
               </svg>
             </span>
-            <span class="brand-name">Aperture</span>
+            <span class="brand-name">ClipSearch</span>
           </div>
         </div>
         <p class="sidebar-heading">Workspace</p>
@@ -1265,7 +1265,7 @@
                 <path d="M12 3.75v4.1m0 8.3v4.1M20.25 12h-4.1m-8.3 0h-4.1M17.84 6.16l-2.9 2.9m-5.88 5.88-2.9 2.9m11.68 0-2.9-2.9m-5.88-5.88-2.9-2.9" />
               </svg>
             </span>
-            <span class="brand-name">Aperture</span>
+            <span class="brand-name">ClipSearch</span>
           </div>
         </div>
         <p class="sidebar-heading">Workspace</p>
@@ -1453,9 +1453,9 @@
       /* Existing frontend state and API contract; all routes and payloads are preserved. */
       const DEFAULT_API_BASE = window.location.origin;
       const state = {
-        apiBase: localStorage.getItem("aperture_api_base") || DEFAULT_API_BASE,
-        token: localStorage.getItem("aperture_token") || null,
-        email: localStorage.getItem("aperture_email") || null,
+        apiBase: localStorage.getItem("clipsearch_api_base") || DEFAULT_API_BASE,
+        token: localStorage.getItem("clipsearch_token") || null,
+        email: localStorage.getItem("clipsearch_email") || null,
         videos: [],
         videosLoaded: false,
         videoLoading: false,
@@ -1675,9 +1675,9 @@
           if (!res.ok) throw new Error(data.detail || "Something went wrong. Please try again.");
           state.token = data.access_token;
           state.email = data.email;
-          localStorage.setItem("aperture_token", state.token);
-          localStorage.setItem("aperture_email", state.email);
-          localStorage.setItem("aperture_api_base", state.apiBase);
+          localStorage.setItem("clipsearch_token", state.token);
+          localStorage.setItem("clipsearch_email", state.email);
+          localStorage.setItem("clipsearch_api_base", state.apiBase);
           updateAccount();
           showToast("success", state.authMode === "login" ? "Signed in successfully." : "Account created — welcome.");
           enterHome();
@@ -1705,8 +1705,8 @@
         state.selectedVideoId = null;
         state.activeJobId = null;
         state.chatPending = false;
-        localStorage.removeItem("aperture_token");
-        localStorage.removeItem("aperture_email");
+        localStorage.removeItem("clipsearch_token");
+        localStorage.removeItem("clipsearch_email");
         if (state.pollTimer) window.clearInterval(state.pollTimer);
         state.pollTimer = null;
         document.getElementById("authPassword").value = "";
