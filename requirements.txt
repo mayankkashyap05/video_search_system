@@ -24,3 +24,7 @@ sentence-transformers
 
 # Embedded vector DB (local mode, no server)
 qdrant-client
+
+# Tests (optional)
+pytest
+httpx

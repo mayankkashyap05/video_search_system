@@ -887,6 +887,83 @@
     .result-time { color: var(--color-accent); font-family: var(--font-mono); font-size: 0.7rem; font-weight: 500; font-variant-numeric: tabular-nums; }
     .result-type { padding: 0.1rem 0.38rem; border-radius: 999px; background: var(--color-surface-subtle); color: var(--color-text-muted); font-size: 0.64rem; font-weight: 650; text-transform: uppercase; letter-spacing: 0.04em; }
     .result-text { color: var(--color-text-secondary); font-size: var(--type-small); line-height: 1.6; overflow-wrap: anywhere; }
+    /* Clickable search results: each one is a real <button> that jumps the player to its timestamp. */
+    button.result-item {
+      display: block;
+      width: 100%;
+      margin: 0;
+      padding: var(--space-3) var(--space-3);
+      border: 1px solid transparent;
+      border-bottom-color: #edf0ed;
+      border-radius: 0;
+      background: transparent;
+      color: inherit;
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+      transition: background var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast);
+    }
+    button.result-item:first-child { border-top-left-radius: var(--radius-md); border-top-right-radius: var(--radius-md); }
+    button.result-item:last-child { border-bottom-color: transparent; border-bottom-left-radius: var(--radius-md); border-bottom-right-radius: var(--radius-md); }
+    button.result-item:hover { background: var(--color-surface-subtle); }
+    button.result-item:focus-visible { outline: 0; border-color: var(--color-accent); box-shadow: var(--focus-ring); position: relative; z-index: 1; }
+    button.result-item .result-time {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      min-height: 1.6rem;
+      padding: 0.1rem 0.5rem 0.1rem 0.4rem;
+      border: 1px solid var(--color-border);
+      border-radius: 999px;
+      background: var(--color-surface);
+      font-size: 0.72rem;
+      font-weight: 600;
+      transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+    }
+    button.result-item .result-time svg { width: 0.6rem; height: 0.6rem; }
+    button.result-item:hover .result-time { border-color: var(--color-accent); background: var(--color-accent-soft); }
+    button.result-item .result-video { min-width: 0; max-width: 100%; overflow: hidden; color: var(--color-text-muted); font-size: 0.68rem; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+    button.result-item .result-text { margin: 0; }
+    button.result-item.active { border-color: var(--color-accent); background: var(--color-accent-soft); }
+    button.result-item.active + button.result-item { border-top-color: transparent; }
+    button.result-item.active .result-time { border-color: var(--color-accent); background: var(--color-accent); color: var(--color-white); }
+    button.result-item.active .result-text { color: var(--color-text); }
+    /* Video player: native <video> inside the existing center panel. */
+    .player-shell { margin-bottom: var(--space-5); }
+    .player-frame { position: relative; overflow: hidden; border-radius: var(--radius-md); background: #0f1512; aspect-ratio: 16 / 9; }
+    .player-frame video { display: block; width: 100%; height: 100%; background: #0f1512; outline: 0; }
+    .player-frame video:focus-visible { box-shadow: var(--focus-ring); }
+    .player-overlay {
+      position: absolute;
+      inset: 0;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: var(--space-3);
+      padding: var(--space-4);
+      background: rgba(15, 21, 18, 0.72);
+      color: var(--color-white);
+      font-size: var(--type-small);
+      font-weight: 500;
+      text-align: center;
+      pointer-events: none;
+    }
+    .player-shell[data-state="idle"] .player-overlay,
+    .player-shell[data-state="loading"] .player-overlay,
+    .player-shell[data-state="error"] .player-overlay { display: flex; }
+    .player-shell[data-state="idle"] .player-overlay,
+    .player-shell[data-state="error"] .player-overlay { pointer-events: auto; }
+    .player-shell[data-state="error"] .player-overlay { background: rgba(15, 21, 18, 0.88); }
+    .player-spinner { width: 1.6rem; height: 1.6rem; border: 2px solid rgba(255, 255, 255, 0.3); border-top-color: var(--color-white); border-radius: 50%; animation: playerSpin 0.8s linear infinite; }
+    .player-shell:not([data-state="loading"]) .player-spinner { display: none; }
+    @keyframes playerSpin { to { transform: rotate(360deg); } }
+    .player-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: 2rem; margin-top: var(--space-2); }
+    .player-status { min-width: 0; color: var(--color-text-muted); font-size: var(--type-caption); line-height: 1.4; }
+    .player-shell[data-state="error"] .player-status { color: var(--color-danger); }
+    .player-resume { flex: 0 0 auto; min-height: 2.1rem; padding: 0.3rem 0.8rem; font-size: var(--type-caption); }
+    .player-resume svg { width: 0.8rem; height: 0.8rem; }
+    @media (prefers-reduced-motion: reduce) { .player-spinner { animation-duration: 2s; } }
     .results-empty { padding: var(--space-4) var(--space-1); color: var(--color-text-secondary); font-size: var(--type-small); line-height: 1.6; }
     .results-empty strong { display: block; margin-bottom: var(--space-1); color: var(--color-text); font-weight: 600; }
     .results-empty p { margin: 0; }
@@ -1379,6 +1456,22 @@
                 <p>Open a video from your library to review its summary and chapters, then search or ask a question in context.</p>
               </div>
               <div class="center-content" id="centerContent">
+                <div class="player-shell" id="playerShell" data-state="idle">
+                  <div class="player-frame">
+                    <video id="videoPlayer" controls playsinline preload="metadata" aria-label="Selected video player"></video>
+                    <div class="player-overlay" id="playerOverlay" aria-live="polite">
+                      <span class="player-spinner" aria-hidden="true"></span>
+                      <span id="playerOverlayText">Loading video…</span>
+                    </div>
+                  </div>
+                  <div class="player-bar">
+                    <span class="player-status" id="playerStatus" role="status" aria-live="polite">Select a video to play.</span>
+                    <button type="button" class="btn btn-primary player-resume" id="playerResume" hidden>
+                      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg>
+                      Play
+                    </button>
+                  </div>
+                </div>
                 <p class="detail-kicker">Selected video</p>
                 <h2 id="centerTitle">—</h2>
                 <div class="detail-divider"></div>
@@ -1468,6 +1561,11 @@
         pollTimer: null,
         activeJobId: null,
         chatPending: false,
+        /* Playback: which video the <video> element currently holds, plus the
+           latest seek request id so rapid clicks can't be overtaken by stale ones. */
+        player: { videoId: null, title: null, streamUrl: null, tokenIssuedAt: 0, loadPromise: null, seekRequestId: 0, retried: false, jumpedAt: 0 },
+        searchResults: [],
+        activeResultIndex: -1,
       };
 
       function authHeaders(extra) {
@@ -1709,6 +1807,10 @@
         localStorage.removeItem("clipsearch_email");
         if (state.pollTimer) window.clearInterval(state.pollTimer);
         state.pollTimer = null;
+        state.searchResults = [];
+        state.activeResultIndex = -1;
+        resetPlayer();
+        document.getElementById("searchResults").innerHTML = '<div class="results-empty"><strong>Search across your library</strong><p>Results include timestamps, so you can jump straight to the moment that matters.</p></div>';
         document.getElementById("authPassword").value = "";
         document.getElementById("chatMessages").innerHTML = '<p class="chat-empty" id="chatEmpty">Questions and sourced answers will appear here.</p>';
         setAuthMode("login");
@@ -1929,9 +2031,15 @@
         state.pollTimer = null;
         state.activeJobId = null;
         openWorkspace();
-        state.selectedVideoId = video.video_id;
         setScope(video.video_id, video.filename);
         renderChatEmpty();
+        showVideoInCenter(video);
+      }
+
+      /* Shows a video's details + player in the center panel without touching the
+         search scope (a library-wide search result may belong to another video). */
+      function showVideoInCenter(video) {
+        state.selectedVideoId = video.video_id;
         if (video.job_id) {
           showCenterForVideo(video);
           if (video.status !== "completed" && video.status !== "failed") {
@@ -1975,6 +2083,7 @@
 
       function showCenterForVideo(video) {
         if (video.video_id) state.selectedVideoId = video.video_id;
+        ensureVideoLoaded(video);
         document.getElementById("centerEmpty").hidden = true;
         const content = document.getElementById("centerContent");
         content.classList.add("show");
@@ -1988,6 +2097,285 @@
         chaptersLabel.hidden = chapters.length === 0;
         chaptersEl.innerHTML = chapters.map((chapter, index) => `
           <div class="chapter-item"><span class="chapter-marker" aria-hidden="true">${index + 1}</span><span>${escapeHtml(chapter.title || chapter.text || JSON.stringify(chapter))}</span></div>`).join("");
+      }
+
+      /* ------------------------------------------------------------------
+         Video playback. The <video> element streams the original upload from
+         GET /videos/{id}/stream using a short-lived, video-bound playback token
+         (the element can't send Authorization headers). Range requests are
+         handled by the browser + backend, so seeking never needs a full download.
+         ------------------------------------------------------------------ */
+      const videoEl = document.getElementById("videoPlayer");
+      const playerShell = document.getElementById("playerShell");
+      const playerStatus = document.getElementById("playerStatus");
+      const playerOverlayText = document.getElementById("playerOverlayText");
+      const playerResume = document.getElementById("playerResume");
+      const PLAYBACK_TOKEN_REFRESH_MS = 45 * 60 * 1000; // tokens last 60 min server-side
+
+      function setPlayerState(stateName, message) {
+        playerShell.dataset.state = stateName;
+        if (stateName === "loading" || stateName === "error" || stateName === "idle") playerOverlayText.textContent = message || "";
+        if (message != null) playerStatus.textContent = message;
+      }
+
+      function showResumeButton(show) {
+        playerResume.hidden = !show;
+      }
+
+      function formatSpokenTime(seconds) {
+        const total = Math.max(0, Math.floor(Number(seconds) || 0));
+        const h = Math.floor(total / 3600);
+        const m = Math.floor((total % 3600) / 60);
+        const s = total % 60;
+        const parts = [];
+        if (h) parts.push(h + (h === 1 ? " hour" : " hours"));
+        if (m) parts.push(m + (m === 1 ? " minute" : " minutes"));
+        parts.push(s + (s === 1 ? " second" : " seconds"));
+        return parts.join(" ");
+      }
+
+      function videoTitleFor(videoId) {
+        const video = state.videos.find(item => item.video_id === videoId);
+        return video ? video.filename : null;
+      }
+
+      async function getVideoStreamUrl(videoId) {
+        const res = await apiFetch("/videos/" + encodeURIComponent(videoId) + "/playback-token");
+        const data = await res.json();
+        return apiUrl(data.stream_url);
+      }
+
+      function waitForVideoMetadata(element) {
+        if (element.readyState >= 1) return Promise.resolve();
+        return new Promise((resolve, reject) => {
+          // Note: don't treat "emptied"/"abort" as failures -- the browser fires them
+          // asynchronously after load() and whenever a newer source replaces this one.
+          const cleanup = () => {
+            element.removeEventListener("loadedmetadata", onLoaded);
+            element.removeEventListener("error", onError);
+          };
+          const onLoaded = () => { cleanup(); resolve(); };
+          const onError = () => { cleanup(); reject(new Error("This video could not be loaded.")); };
+          element.addEventListener("loadedmetadata", onLoaded);
+          element.addEventListener("error", onError);
+        });
+      }
+
+      function resetPlayer() {
+        const player = state.player;
+        player.videoId = null;
+        player.title = null;
+        player.streamUrl = null;
+        player.tokenIssuedAt = 0;
+        player.loadPromise = null;
+        player.retried = false;
+        videoEl.pause();
+        videoEl.removeAttribute("src");
+        videoEl.load();
+        showResumeButton(false);
+        setPlayerState("idle", "Select a video to play.");
+      }
+
+      /* Loads `videoId` into the player (no-op if it is already loaded and the
+         token is still fresh). Resolves once metadata is available. */
+      function loadVideo(videoId, title) {
+        const player = state.player;
+        const fresh = Date.now() - player.tokenIssuedAt < PLAYBACK_TOKEN_REFRESH_MS;
+        if (player.videoId === videoId && player.loadPromise && fresh) return player.loadPromise;
+
+        player.videoId = videoId;
+        player.title = title || videoTitleFor(videoId) || "video";
+        player.retried = false;
+        showResumeButton(false);
+        setPlayerState("loading", "Loading video…");
+
+        const promise = (async () => {
+          const streamUrl = await getVideoStreamUrl(videoId);
+          if (player.videoId !== videoId || player.loadPromise !== promise) throw new Error("superseded");
+          player.streamUrl = streamUrl;
+          player.tokenIssuedAt = Date.now();
+          videoEl.src = streamUrl;
+          videoEl.load();
+          await waitForVideoMetadata(videoEl);
+          if (player.videoId !== videoId || player.loadPromise !== promise) throw new Error("superseded");
+          setPlayerState("ready", "Ready · " + formatTime(videoEl.duration));
+        })();
+        player.loadPromise = promise;
+        promise.catch(error => {
+          if (error.message === "superseded") return;
+          if (player.loadPromise === promise) {
+            player.loadPromise = null;
+            setPlayerState("error", friendlyPlaybackError(error));
+          }
+        });
+        return promise;
+      }
+
+      function friendlyPlaybackError(error) {
+        const message = String(error && error.message || "");
+        if (/still being prepared/i.test(message)) return "The video file is still being prepared. Try again in a moment.";
+        if (/not found|no longer/i.test(message)) return "This video is no longer available.";
+        if (/Session expired/i.test(message)) return message;
+        return "This video could not be played. Try reopening the video.";
+      }
+
+      function clampTimestamp(timestamp, duration) {
+        const value = Number(timestamp);
+        if (!Number.isFinite(value)) return null;
+        const max = Number.isFinite(duration) && duration > 0 ? duration : Infinity;
+        return Math.min(Math.max(value, 0), max);
+      }
+
+      /* Seeks the currently loaded video and starts playback. Returns true if
+         playback actually started, false if the browser blocked autoplay. */
+      async function seekVideoTo(timestamp) {
+        const target = clampTimestamp(timestamp, videoEl.duration);
+        if (target == null) throw new Error("Invalid timestamp");
+        videoEl.currentTime = target;
+        try {
+          await videoEl.play();
+          return true;
+        } catch (error) {
+          return false;
+        }
+      }
+
+      async function playSearchResult(result, index) {
+        const player = state.player;
+        const requestId = ++player.seekRequestId;
+        const timestamp = clampTimestamp(result.timestamp, Infinity);
+        if (timestamp == null) {
+          showToast("error", "This result has no usable timestamp.");
+          return;
+        }
+        const videoId = result.video_id || state.scopedVideoId || state.selectedVideoId;
+        if (!videoId) {
+          showToast("error", "The source video could not be opened.");
+          return;
+        }
+        setActiveSearchResult(index);
+
+        try {
+          if (state.selectedVideoId !== videoId || player.videoId !== videoId) {
+            const video = await findVideo(videoId);
+            if (requestId !== player.seekRequestId) return;
+            if (!video) throw new Error("The source video could not be opened.");
+            showVideoInCenter(video);
+          }
+          await loadVideo(videoId);
+          if (requestId !== player.seekRequestId) return; // a newer click wins
+          const played = await seekVideoTo(timestamp);
+          if (requestId !== player.seekRequestId) return;
+          const label = formatTime(videoEl.currentTime);
+          player.jumpedAt = Date.now();
+          if (played) {
+            setPlayerState("ready", "Playing from " + label);
+            showResumeButton(false);
+          } else {
+            setPlayerState("ready", "Jumped to " + label + " · press Play to continue");
+            showResumeButton(true);
+          }
+          revealPlayer();
+        } catch (error) {
+          if (error.message === "superseded" || requestId !== player.seekRequestId) return;
+          setPlayerState("error", friendlyPlaybackError(error));
+        }
+      }
+
+      async function findVideo(videoId) {
+        let video = state.videos.find(item => item.video_id === videoId);
+        if (!video) {
+          try {
+            const res = await apiFetch("/videos");
+            const data = await res.json();
+            state.videos = Array.isArray(data.videos) ? data.videos : state.videos;
+            video = state.videos.find(item => item.video_id === videoId);
+          } catch (error) {
+            return null;
+          }
+        }
+        return video || null;
+      }
+
+      function revealPlayer() {
+        const narrow = window.matchMedia("(max-width: 900px)").matches;
+        if (narrow) playerShell.scrollIntoView({ behavior: "smooth", block: "start" });
+        else {
+          const rect = playerShell.getBoundingClientRect();
+          if (rect.top < 0 || rect.bottom > window.innerHeight) playerShell.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        }
+      }
+
+      function setActiveSearchResult(index) {
+        state.activeResultIndex = index;
+        document.querySelectorAll("#searchResults .result-item").forEach(button => {
+          const active = Number(button.dataset.index) === index;
+          button.classList.toggle("active", active);
+          if (active) button.setAttribute("aria-current", "true");
+          else button.removeAttribute("aria-current");
+        });
+      }
+
+      /* Keep the result nearest the playhead highlighted while the video plays. */
+      function syncActiveResultWithPlayhead() {
+        const videoId = state.player.videoId;
+        if (!videoId || !state.searchResults.length || videoEl.seeking) return;
+        const now = videoEl.currentTime;
+        let best = -1;
+        let bestTime = -Infinity;
+        state.searchResults.forEach((result, index) => {
+          const resultVideo = result.video_id || state.scopedVideoId;
+          if (resultVideo !== videoId) return;
+          const ts = Number(result.timestamp);
+          if (Number.isFinite(ts) && ts <= now + 0.25 && ts > bestTime) { best = index; bestTime = ts; }
+        });
+        if (best !== -1 && best !== state.activeResultIndex) setActiveSearchResult(best);
+      }
+
+      playerResume.addEventListener("click", async () => {
+        try {
+          await videoEl.play();
+          showResumeButton(false);
+        } catch (error) {
+          setPlayerState("ready", "Playback was blocked by the browser. Use the player controls.");
+        }
+      });
+
+      // Keep the "Playing from 12:43" confirmation visible briefly after a jump
+      // instead of letting the immediate buffering/playing events overwrite it.
+      function recentlyJumped() { return Date.now() - state.player.jumpedAt < 4000; }
+      videoEl.addEventListener("waiting", () => { if (playerShell.dataset.state === "ready" && !recentlyJumped()) playerStatus.textContent = "Buffering…"; });
+      videoEl.addEventListener("playing", () => {
+        if (playerShell.dataset.state !== "ready") return;
+        showResumeButton(false);
+        if (!recentlyJumped()) playerStatus.textContent = "Playing · " + formatTime(videoEl.currentTime) + " / " + formatTime(videoEl.duration);
+      });
+      videoEl.addEventListener("pause", () => {
+        if (playerShell.dataset.state === "ready" && !videoEl.ended) playerStatus.textContent = "Paused at " + formatTime(videoEl.currentTime);
+      });
+      videoEl.addEventListener("ended", () => { if (playerShell.dataset.state === "ready") playerStatus.textContent = "Finished · " + formatTime(videoEl.duration); });
+      videoEl.addEventListener("timeupdate", syncActiveResultWithPlayhead);
+      videoEl.addEventListener("error", () => {
+        const player = state.player;
+        if (!player.videoId || !videoEl.getAttribute("src")) return;
+        // A stale playback token is the most likely cause after the page has sat idle:
+        // refresh it once, preserving the position, before reporting an error.
+        if (!player.retried && Date.now() - player.tokenIssuedAt > PLAYBACK_TOKEN_REFRESH_MS) {
+          const resumeAt = videoEl.currentTime;
+          player.retried = true;
+          player.tokenIssuedAt = 0;
+          loadVideo(player.videoId, player.title).then(() => { videoEl.currentTime = resumeAt; }).catch(() => {});
+          return;
+        }
+        player.loadPromise = null;
+        setPlayerState("error", "This video could not be played. Try reopening the video.");
+      });
+
+      function ensureVideoLoaded(video) {
+        if (!video || !video.video_id) return;
+        const player = state.player;
+        if (player.videoId === video.video_id && player.loadPromise) return;
+        loadVideo(video.video_id, video.filename).catch(() => { /* surfaced in the player UI */ });
       }
 
       /* Upload: preserve multipart file upload and URL query endpoint contracts. */
@@ -2204,11 +2592,26 @@
             box.innerHTML = `<div class="results-empty"><strong>No matches found</strong><p>Nothing matched “${escapeHtml(query)}”. Try another phrase or search across all videos.</p></div>`;
             return;
           }
-          box.innerHTML = results.map(result => `
-            <article class="result-item">
-              <div class="result-meta"><span class="result-time">${formatTime(result.timestamp)}</span><span class="result-type">${escapeHtml(result.type || "moment")}</span></div>
+          // Library-wide results name their source video; make sure we know those titles.
+          const unknown = results.find(result => result.video_id && !videoTitleFor(result.video_id));
+          if (unknown) await findVideo(unknown.video_id);
+          state.searchResults = results;
+          state.activeResultIndex = -1;
+          const showVideoName = !state.scopedVideoId;
+          box.innerHTML = results.map((result, index) => {
+            const resultVideoId = result.video_id || state.scopedVideoId || "";
+            const title = videoTitleFor(resultVideoId) || (showVideoName ? "Unknown video" : state.scopedVideoTitle) || "video";
+            const label = "Play " + title + " from " + formatSpokenTime(result.timestamp);
+            return `
+            <button class="result-item" type="button" data-index="${index}" data-video-id="${escapeHtml(resultVideoId)}" data-timestamp="${escapeHtml(result.timestamp)}" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}">
+              <div class="result-meta">
+                <span class="result-time"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg>${formatTime(result.timestamp)}</span>
+                <span class="result-type">${escapeHtml(result.type || "moment")}</span>
+                ${showVideoName ? `<span class="result-video">${escapeHtml(title)}</span>` : ""}
+              </div>
               <p class="result-text">${escapeHtml(result.text)}</p>
-            </article>`).join("");
+            </button>`;
+          }).join("");
         } catch (error) {
           box.innerHTML = `<div class="results-empty" role="alert"><strong>Search couldn’t finish</strong><p>${escapeHtml(error.message)}. Please try again.</p></div>`;
         } finally {
@@ -2219,6 +2622,15 @@
       }
 
       document.getElementById("searchForm").addEventListener("submit", runSearch);
+
+      /* One delegated handler: clicking (or pressing Enter/Space on) a result jumps the player to it. */
+      document.getElementById("searchResults").addEventListener("click", event => {
+        const button = event.target.closest("button.result-item");
+        if (!button) return;
+        const index = Number(button.dataset.index);
+        const result = state.searchResults[index];
+        if (result) playSearchResult(result, index);
+      });
 
       function formatTime(seconds) {
         const totalSeconds = Math.max(0, Math.floor(Number(seconds) || 0));
