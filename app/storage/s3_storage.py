@@ -35,3 +35,35 @@ def download_file(storage_key: str, local_path: Path) -> Path:
 
 def generate_presigned_url(storage_key: str, expires_in: int = 3600) -> str:
     return str(_resolve(storage_key))
+
+
+def file_exists(storage_key: str) -> bool:
+    try:
+        return _resolve(storage_key).is_file()
+    except ValueError:
+        return False
+
+
+def get_file_size(storage_key: str) -> int:
+    """Size in bytes of a stored object. Raises FileNotFoundError if missing."""
+    path = _resolve(storage_key)
+    if not path.is_file():
+        raise FileNotFoundError(storage_key)
+    return path.stat().st_size
+
+
+def iter_file_range(storage_key: str, start: int, end: int, chunk_size: int = 1024 * 1024):
+    """
+    Yield bytes [start, end] (inclusive, like HTTP Content-Range) of a stored
+    object in chunks, so large videos are never read fully into memory.
+    """
+    path = _resolve(storage_key)
+    remaining = end - start + 1
+    with open(path, "rb") as f:
+        f.seek(start)
+        while remaining > 0:
+            data = f.read(min(chunk_size, remaining))
+            if not data:
+                break
+            remaining -= len(data)
+            yield data

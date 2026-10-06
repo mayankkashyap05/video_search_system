@@ -5,13 +5,17 @@ retrieve results, and search. Also serves the frontend at "/".
 Run with a single process (embedded Qdrant locks its data folder):
     uvicorn app.api.main:app --host 127.0.0.1 --port 8000
 """
+import re
 import uuid
+import mimetypes
 from pathlib import Path
+from urllib.parse import quote
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, UploadFile, File, Depends, HTTPException
+from fastapi import FastAPI, UploadFile, File, Depends, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
@@ -20,10 +24,13 @@ from app.config import TEMP_DIR, BASE_DIR
 from app.core.video_chat import ask_about_video
 from app.db.database import get_db, engine, Base
 from app.db.models import Video, ProcessingJob, JobStatus, User
-from app.storage.s3_storage import upload_file
+from app.storage.s3_storage import upload_file, get_file_size, iter_file_range
 from app.workers.tasks import process_video_task, process_video_from_url_task
 from app.core.qdrant_indexing import search as qdrant_search
-from app.auth.users import hash_password, verify_password, create_access_token, get_current_user
+from app.auth.users import (
+    hash_password, verify_password, create_access_token, get_current_user,
+    create_playback_token, get_playback_user, PLAYBACK_TOKEN_EXPIRE_SECONDS,
+)
 from app.core.live_sessions import start_session, get_session, stop_session, list_sessions
 
 Base.metadata.create_all(bind=engine)
@@ -143,6 +150,141 @@ def _get_owned_video_or_404(db: Session, video_id: str, current_user: User) -> V
     if not video:
         raise HTTPException(status_code=404, detail="Video not found")
     return video
+
+
+# --- Video playback ----------------------------------------------------------
+
+# Browsers don't know every container by extension; make the common ones explicit.
+_EXTRA_MIME_TYPES = {
+    ".mkv": "video/x-matroska",
+    ".webm": "video/webm",
+    ".mov": "video/quicktime",
+    ".m4v": "video/x-m4v",
+    ".m4a": "audio/mp4",
+    ".ogv": "video/ogg",
+    ".opus": "audio/ogg",
+}
+_RANGE_RE = re.compile(r"^bytes=(\d*)-(\d*)$")
+
+
+def get_video_content_type(video: Video) -> str:
+    # The stored key keeps the original extension (even for URL ingests,
+    # where `filename` is the source URL), so derive the type from it.
+    name = Path(video.storage_key).name if video.storage_key else video.filename
+    suffix = Path(name).suffix.lower()
+    if suffix in _EXTRA_MIME_TYPES:
+        return _EXTRA_MIME_TYPES[suffix]
+    guessed, _ = mimetypes.guess_type(name)
+    return guessed or "application/octet-stream"
+
+
+def _parse_range_header(range_header: str | None, file_size: int):
+    """
+    Return (start, end) inclusive byte offsets for a single-range request,
+    None when the header is absent/malformed (serve the full file), or raise
+    416 when the range is syntactically valid but unsatisfiable.
+    """
+    if not range_header:
+        return None
+    match = _RANGE_RE.match(range_header.strip())
+    if not match:
+        # Malformed Range headers must be ignored (RFC 9110 §14.2).
+        return None
+    start_s, end_s = match.groups()
+    if not start_s and not end_s:
+        return None
+    if not start_s:
+        # Suffix range: last N bytes.
+        suffix = int(end_s)
+        if suffix == 0:
+            raise HTTPException(status_code=416, detail="Requested range not satisfiable")
+        start = max(file_size - suffix, 0)
+        end = file_size - 1
+    else:
+        start = int(start_s)
+        end = int(end_s) if end_s else file_size - 1
+        if start >= file_size or (end_s and end < start):
+            raise HTTPException(status_code=416, detail="Requested range not satisfiable")
+        end = min(end, file_size - 1)
+    return start, end
+
+
+def _get_video_file_size_or_error(video: Video) -> int:
+    if not video.storage_key or video.storage_key == "pending":
+        # URL ingests have no file until the download stage finishes.
+        raise HTTPException(status_code=409, detail="This video is still being prepared")
+    try:
+        return get_file_size(video.storage_key)
+    except (FileNotFoundError, ValueError):
+        raise HTTPException(status_code=404, detail="Video file not found")
+
+
+def stream_video(video: Video, request: Request) -> Response:
+    file_size = _get_video_file_size_or_error(video)
+    content_type = get_video_content_type(video)
+    download_name = Path(video.storage_key).name
+    headers = {
+        "Accept-Ranges": "bytes",
+        # Authenticated per-user media: never let shared caches keep it.
+        "Cache-Control": "private, no-store",
+        "Content-Disposition": f"inline; filename*=UTF-8''{quote(download_name)}",
+    }
+
+    try:
+        byte_range = _parse_range_header(request.headers.get("range"), file_size)
+    except HTTPException as exc:
+        if exc.status_code == 416:
+            headers["Content-Range"] = f"bytes */{file_size}"
+            return Response(status_code=416, headers=headers)
+        raise
+
+    if byte_range is None:
+        start, end, status_code = 0, file_size - 1, 200
+    else:
+        start, end = byte_range
+        status_code = 206
+        headers["Content-Range"] = f"bytes {start}-{end}/{file_size}"
+    headers["Content-Length"] = str(end - start + 1 if file_size else 0)
+
+    if request.method == "HEAD" or file_size == 0:
+        return Response(status_code=status_code, headers=headers, media_type=content_type)
+
+    return StreamingResponse(
+        iter_file_range(video.storage_key, start, end),
+        status_code=status_code,
+        headers=headers,
+        media_type=content_type,
+    )
+
+
+@app.get("/videos/{video_id}/playback-token")
+def get_video_playback_token(
+    video_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Short-lived, single-video token the <video> element can use (see get_playback_user)."""
+    video = _get_owned_video_or_404(db, video_id, current_user)
+    token = create_playback_token(current_user.id, video.id)
+    return {
+        "video_id": video.id,
+        "token": token,
+        "expires_in": PLAYBACK_TOKEN_EXPIRE_SECONDS,
+        "stream_url": f"/videos/{video.id}/stream?token={token}",
+        "content_type": get_video_content_type(video),
+    }
+
+
+@app.api_route("/videos/{video_id}/stream", methods=["GET", "HEAD"])
+def stream_owned_video(
+    video_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_playback_user),
+):
+    """Stream the original uploaded file with HTTP Range support (browser seeking)."""
+    video = _get_owned_video_or_404(db, video_id, current_user)
+    return stream_video(video, request)
 
 
 @app.get("/jobs/{job_id}")
